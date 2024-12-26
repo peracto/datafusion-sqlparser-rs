@@ -3381,8 +3381,7 @@ impl<'a> Parser<'a> {
             });
         }
         self.expect_token(&Token::LParen)?;
-        let in_op = if self.parse_keyword(Keyword::SELECT) || self.parse_keyword(Keyword::WITH) {
-            self.prev_token();
+        let in_op = if self.peek_sub_query() {
             Expr::InSubquery {
                 expr: Box::new(expr),
                 subquery: self.parse_query()?,

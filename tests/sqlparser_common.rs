@@ -12595,3 +12595,17 @@ fn parse_update_from_before_select() {
         parse_sql_statements(query).unwrap_err()
     );
 }
+
+
+#[test]
+fn parse_complex_inline_subquery_with_set() {
+    all_dialects()
+    .verified_stmt("SELECT * FROM DUAL WHERE Z IN ((SELECT 1 FROM DUAL) UNION ALL (SELECT 2 FROM DUAL)) AND t <> 123");
+}
+
+
+#[test]
+fn parse_complex_inline_projection_subquery_with_set() {
+    all_dialects()
+    .verified_stmt("SELECT *, ((SELECT 1 FROM DUAL) UNION ALL (SELECT 2 FROM DUAL)) AS TT FROM DUAL");
+}
