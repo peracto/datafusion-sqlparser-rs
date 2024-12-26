@@ -2819,6 +2819,20 @@ pub enum Statement {
         variables: OneOrManyWithParens<ObjectName>,
         value: Vec<Expr>,
     },
+
+    /// ```sql
+    /// SET <variable> = expression;
+    /// SET (variable[, ...]) = (expression[, ...]);
+    /// ```
+    /// This is a variant of SetVariable. It's designed exclusivly for multi
+    /// valued results.
+    /// 
+    SetMultiVariable {
+        local: bool,
+        hivevar: bool,
+        variables: OneOrManyWithParens<ObjectName>,
+        value: OneOrManyWithParens<Expr>
+    },
     /// ```sql
     /// SET TIME ZONE <value>
     /// ```
@@ -4372,6 +4386,22 @@ impl fmt::Display for Statement {
                     l_paren = parenthesized.then_some("(").unwrap_or_default(),
                     value = display_comma_separated(value),
                     r_paren = parenthesized.then_some(")").unwrap_or_default(),
+                )
+            }
+            Statement::SetMultiVariable {
+                local,
+                variables,
+                hivevar,
+                value,
+            } => {
+                f.write_str("SET ")?;
+                if *local {
+                    f.write_str("LOCAL ")?;
+                }
+                write!(
+                    f,
+                    "{hivevar}{variables} = {value}",
+                    hivevar = if *hivevar { "HIVEVAR:" } else { "" },
                 )
             }
             Statement::SetTimeZone { local, value } => {

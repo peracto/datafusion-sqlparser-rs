@@ -2970,6 +2970,7 @@ fn parse_insert_overwrite() {
 
 #[test]
 fn test_table_sample() {
+    snowflake_and_generic().verified_stmt("(SELECT * FROM testtable SAMPLE (10))");
     snowflake_and_generic().verified_stmt("SELECT * FROM testtable SAMPLE (10)");
     snowflake_and_generic().verified_stmt("SELECT * FROM testtable TABLESAMPLE (10)");
     snowflake_and_generic()
@@ -2982,4 +2983,31 @@ fn test_table_sample() {
         .verified_stmt("SELECT * FROM testtable TABLESAMPLE SYSTEM (3) REPEATABLE (82)");
     snowflake_and_generic().verified_stmt("SELECT id FROM mytable TABLESAMPLE (10) REPEATABLE (1)");
     snowflake_and_generic().verified_stmt("SELECT id FROM mytable TABLESAMPLE (10) SEED (1)");
+}
+
+#[test]
+fn parse_set_statements() {
+    for sql in [
+        "((SELECT 1))",
+        "SET (X, Y) = (1, 2)",
+        "SET X = 1",
+        "SET X = (1)",
+        "SET (X) = (1)",
+        "SET (X, Y) = (1)",
+        "SET (X, Y) = (SELECT 123)",
+        "SET (X, Y) = (SELECT 123)",
+        "SET (X, Y) = (SELECT 123, 456 ORDER BY 1)",
+        "SET X = ((SELECT 123))",
+        "SET (a) = (SELECT 22 FROM DUAL)",
+        "SET (a) = (SELECT 22 FROM DUAL, (SELECT 1 FROM DUAL))",
+        "SET (a) = ((SELECT 22 FROM DUAL, (SELECT 1 FROM DUAL)))",
+        "SET (a) = (((SELECT 22 FROM DUAL, (SELECT 1 FROM DUAL))))",
+        "SET a = (SELECT 22 FROM DUAL)",
+        "SET a = (SELECT 22 FROM DUAL, (SELECT 1 FROM DUAL))",
+        "SET a = ((SELECT 22 FROM DUAL, (SELECT 1 FROM DUAL)))",
+        "SET (XX, YY) = (((SELECT 22 FROM DUAL, (SELECT 1 FROM DUAL))), (SELECT 33 FROM DUAL))",
+        "SET (XX, YY, ZZ) = (((SELECT 22 FROM DUAL, (SELECT 1 FROM DUAL)) ORDER BY 3), (SELECT 33 FROM DUAL), 345)"
+    ] {
+        snowflake().verified_stmt(sql);
+    }
 }

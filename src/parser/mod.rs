@@ -10102,35 +10102,94 @@ impl<'a> Parser<'a> {
         let parenthesized_assignment = matches!(&variables, OneOrManyWithParens::Many(_));
 
         if self.consume_token(&Token::Eq) || self.parse_keyword(Keyword::TO) {
-            if parenthesized_assignment {
-                self.expect_token(&Token::LParen)?;
-            }
+            
+            if self.dialect.supports_parenthesized_set_variables() && self.consume_token(&Token::LParen) {
+                let mut values = vec![];
+                loop {
+                    let value = if let Some(expr) = self.try_parse_expr_sub_query()? {
+                        expr
+                    } else if let Ok(expr) = self.parse_expr() {
+                        expr
+                    } else {
+                        self.expected("variable value", self.peek_token())?
+                    };
 
-            let mut values = vec![];
-            loop {
-                let value = if let Some(expr) = self.try_parse_expr_sub_query()? {
-                    expr
-                } else if let Ok(expr) = self.parse_expr() {
-                    expr
+                    values.push(value);
+
+                    if !self.consume_token(&Token::Comma) {
+                        break
+                    }
+                }
+
+                self.expect_token(&Token::RParen)?;
+
+                // If there is a single element, and that element is a Subquery, then
+                // we return a OneOrManyWithParens::One instead of OneOrManyWithParens::Many.
+                // This ensures that the wrapped parens are maintained.
+
+                let value = if values.len() == 1 {
+                    match &values[0] {
+                        Expr::Subquery(_) =>  OneOrManyWithParens::One(values[0].clone()), // If it's a Subquery, return it as is
+                        _ =>  OneOrManyWithParens::Many(values), // Otherwise, return as is
+                    }
                 } else {
-                    self.expected("variable value", self.peek_token())?
+                    // The parser wraps the final query in Box<Query>. If we leave as-is, then
+                    // this added an extra set of parens. To resolve this, we pull out the embedded
+                    // body of the Box<Query> and use this instead.
+
+                    let transformed_values: Vec<Expr> = values.into_iter().map(|value| {
+                        // Check if the value is a Subquery
+                        if let Expr::Subquery(inner) = value {
+                            let query = *inner; // Unbox the Subquery
+                            match *query.body {
+                                SetExpr::Query(inner_set) => Expr::Subquery(inner_set), // Use the inner SetExpr::Query
+                                _ => Expr::Subquery(Box::new(query)), // Re-wrap the query
+                            }
+                        } else {
+                            value // Return as-is if it's not a Subquery
+                        }
+                    }).collect();
+                    OneOrManyWithParens::Many(transformed_values)
                 };
 
-                values.push(value);
-                if self.consume_token(&Token::Comma) {
-                    continue;
+                return Ok(Statement::SetMultiVariable {
+                    local: modifier == Some(Keyword::LOCAL),
+                    hivevar: Some(Keyword::HIVEVAR) == modifier,
+                    variables,
+                    value,
+                });
+
+            } else {
+                if parenthesized_assignment {
+                    self.expect_token(&Token::LParen)?;
                 }
 
-                if parenthesized_assignment {
-                    self.expect_token(&Token::RParen)?;
-                }
+                let mut values = vec![];
+
+                loop {
+                    let value = if let Some(expr) = self.try_parse_expr_sub_query()? {
+                        expr
+                    } else if let Ok(expr) = self.parse_expr() {
+                        expr
+                    } else {
+                        self.expected("variable value", self.peek_token())?
+                    };
+
+                    values.push(value);
+
+                    if !self.consume_token(&Token::Comma) {
+                        break
+                    }
+                }                
+
                 return Ok(Statement::SetVariable {
                     local: modifier == Some(Keyword::LOCAL),
                     hivevar: Some(Keyword::HIVEVAR) == modifier,
                     variables,
-                    value: values,
+                    value: values
                 });
             }
+
         }
 
         let OneOrManyWithParens::One(variable) = variables else {
@@ -13209,16 +13268,26 @@ impl<'a> Parser<'a> {
         self.tokens
     }
 
-    /// Returns true if the next keyword indicates a sub query, i.e. SELECT or WITH
+    /// Returns true if the next keyword after skipping LParen indicates a sub query, i.e. SELECT or WITH
     fn peek_sub_query(&mut self) -> bool {
-        if self
-            .parse_one_of_keywords(&[Keyword::SELECT, Keyword::WITH])
-            .is_some()
-        {
-            self.prev_token();
-            return true;
+        let mut index = self.index;
+        while let Some(token) = self.tokens.get(index) {
+            match &token.token {
+                Token::LParen | Token::Whitespace(_) => { 
+                    index += 1; 
+                    continue; 
+                }
+                Token::Word(w) if w.keyword == Keyword::SELECT || w.keyword == Keyword::WITH => { 
+                    return true; 
+                }
+                _ => { 
+                    return false; 
+                }
+            }
         }
-        false
+    
+        false 
+
     }
 
     fn parse_show_stmt_options(&mut self) -> Result<ShowStatementOptions, ParserError> {

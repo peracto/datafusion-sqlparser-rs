@@ -435,6 +435,7 @@ impl Spanned for Statement {
             Statement::Discard { .. } => Span::empty(),
             Statement::SetRole { .. } => Span::empty(),
             Statement::SetVariable { .. } => Span::empty(),
+            Statement::SetMultiVariable { .. } => Span::empty(),
             Statement::SetTimeZone { .. } => Span::empty(),
             Statement::SetNames { .. } => Span::empty(),
             Statement::SetNamesDefault {} => Span::empty(),

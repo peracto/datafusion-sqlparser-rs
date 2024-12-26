@@ -7736,7 +7736,7 @@ fn parse_set_variable() {
     let multi_variable_dialects = all_dialects_where(|d| d.supports_parenthesized_set_variables());
     let sql = r#"SET (a, b, c) = (1, 2, 3)"#;
     match multi_variable_dialects.verified_stmt(sql) {
-        Statement::SetVariable {
+        Statement::SetMultiVariable {
             local,
             hivevar,
             variables,
@@ -7754,12 +7754,12 @@ fn parse_set_variable() {
             );
             assert_eq!(
                 value,
-                vec![
+                OneOrManyWithParens::Many(vec![
                     Expr::Value(number("1")),
                     Expr::Value(number("2")),
                     Expr::Value(number("3")),
                 ]
-            );
+            ));
         }
         _ => unreachable!(),
     }
@@ -7768,11 +7768,11 @@ fn parse_set_variable() {
     for (sql, canonical) in [
         (
             "SET (a) = (SELECT 22 FROM tbl1)",
-            "SET (a) = ((SELECT 22 FROM tbl1))",
+            "SET (a) = (SELECT 22 FROM tbl1)",
         ),
         (
             "SET (a) = (SELECT 22 FROM tbl1, (SELECT 1 FROM tbl2))",
-            "SET (a) = ((SELECT 22 FROM tbl1, (SELECT 1 FROM tbl2)))",
+            "SET (a) = (SELECT 22 FROM tbl1, (SELECT 1 FROM tbl2))",
         ),
         (
             "SET (a) = ((SELECT 22 FROM tbl1, (SELECT 1 FROM tbl2)))",
