@@ -2983,3 +2983,20 @@ fn test_table_sample() {
     snowflake_and_generic().verified_stmt("SELECT id FROM mytable TABLESAMPLE (10) REPEATABLE (1)");
     snowflake_and_generic().verified_stmt("SELECT id FROM mytable TABLESAMPLE (10) SEED (1)");
 }
+
+
+#[test]
+fn test_stage() {
+    snowflake().verified_stmt("SELECT * FROM @~ AS my_alias");
+    snowflake().verified_stmt("SELECT * FROM @%mystage2/bingo/bish (FILE_FORMAT => ABC)");
+    snowflake().verified_stmt("SELECT xx.* FROM @mystagex2 (FILE_FORMAT => 'ABC', PATTERN => 'CDE') AS xx");
+    snowflake().verified_stmt("SELECT * FROM @%mystage2/bingo/bish (PATTERN => 'a reg expr')");
+    snowflake().verified_stmt("SELECT * FROM @%mystage2/bingo/bish");
+    snowflake().verified_stmt("SELECT * FROM @%mystage2/bingo/bish (file_format => ABC, bish => 123 + 334) AS my_alias");
+    snowflake().verified_stmt("SELECT * FROM @mystage");
+    snowflake().verified_stmt("SELECT * FROM @mystage2/bingo/bish");
+    snowflake().verified_stmt("SELECT * FROM @mystage2/bingo/bish AS my_alias");
+    snowflake().verified_stmt("SELECT * FROM @schema.%tablename AS my_alias");
+    snowflake().verified_stmt("SELECT * FROM @schema.xxxx.%tablename AS my_alias");
+    snowflake().verified_stmt("SELECT * FROM @%mystage2/bingo/bish (FILE_FORMAT => ABC.DEF, bish => 123 + 334) AS my_alias");
+}

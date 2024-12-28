@@ -263,6 +263,19 @@ impl fmt::Display for Ident {
     }
 }
 
+
+/// A name of a table, view, custom type, etc., possibly multi-part, i.e. db.schema.obj
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct StagePath(pub Vec<Ident>);
+
+impl fmt::Display for StagePath {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", display_separated(&self.0, "."))
+    }
+}
+
 /// A name of a table, view, custom type, etc., possibly multi-part, i.e. db.schema.obj
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -372,6 +385,22 @@ impl fmt::Display for Interval {
 pub struct StructField {
     pub field_name: Option<Ident>,
     pub field_type: DataType,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct StagedConfigParameters {
+    pub file_format: Option<ObjectName>,
+    pub pattern: Option<String>
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum StagedConfigEnum {
+    None,
+    StagedConfigParameters(StagedConfigParameters)
 }
 
 impl fmt::Display for StructField {

@@ -1149,6 +1149,17 @@ pub enum TableFactor {
         symbols: Vec<SymbolDefinition>,
         alias: Option<TableAlias>,
     },
+    /// A staged table source.
+    /// 
+    /// See <https://docs.snowflake.com/en/user-guide/querying-stage>
+    Staged {
+        name: ObjectName,
+        path: Option<StagePath>,
+        alias: Option<TableAlias>,
+        parameters: Option<Vec<FunctionArg>>,
+        placeholder: Option<TokenWithSpan>
+    },
+
 }
 
 /// The table sample modifier options
@@ -1810,7 +1821,43 @@ impl fmt::Display for TableFactor {
                 }
                 Ok(())
             }
+            TableFactor::Staged {
+                name,
+                path,
+                alias,
+                parameters,
+                placeholder: _
+            } => {
+                let mut output = format!("@{name}");
+
+                // Append path segments, if any
+                if let Some(path) = path {
+                    output.extend(path.0.iter().map(|segment| format!("/{}", segment)));
+                }
+
+                if let Some(args) = parameters {
+                    output.push_str(" (");
+                    let mut x = "";
+                    for arg in args {
+                        output.push_str(x);
+                        output.push_str(&format!("{}", arg));
+                        x = ", ";
+                    }
+                    output.push_str(")");
+                }
+
+                // Append alias, if any
+                if let Some(alias) = alias {
+                    output.push_str(&format!(" AS {}", alias));
+                }
+
+                // Write the final constructed output
+                f.write_str(&output)?;
+
+                Ok(())
+            }
         }
+
     }
 }
 

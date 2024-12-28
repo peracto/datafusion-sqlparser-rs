@@ -3611,6 +3611,14 @@ impl<'a> Parser<'a> {
         }
     }
 
+    // /// Report `found` was encountered instead of `expected`
+    // pub fn unexpected_ref<T>(&self, expected: &str, found: &TokenWithSpan) -> Result<T, ParserError> {
+    //     parser_err!(
+    //         format!("Unexpected: {expected}"),
+    //         found.span.start
+    //     )
+    // }
+
     /// Report `found` was encountered instead of `expected`
     pub fn expected<T>(&self, expected: &str, found: TokenWithSpan) -> Result<T, ParserError> {
         parser_err!(
@@ -10657,6 +10665,7 @@ impl<'a> Parser<'a> {
                         | TableFactor::TableFunction { alias, .. }
                         | TableFactor::Pivot { alias, .. }
                         | TableFactor::Unpivot { alias, .. }
+                        | TableFactor::Staged { alias, .. }
                         | TableFactor::MatchRecognize { alias, .. }
                         | TableFactor::NestedJoin { alias, .. } => {
                             // but not `FROM (mytable AS alias1) AS alias2`.
@@ -10771,6 +10780,11 @@ impl<'a> Parser<'a> {
             self.prev_token();
             self.parse_open_json_table_factor()
         } else {
+            // allow the dialect to override statement parsing
+            if let Some(statement) = self.parse_staged_table()? {
+                return Ok(statement);
+            }
+
             let name = self.parse_object_name(true)?;
 
             let json_path = match self.peek_token().token {
@@ -10853,6 +10867,136 @@ impl<'a> Parser<'a> {
 
             Ok(table)
         }
+    }
+
+    pub fn parse_parenthesized_comma_separated_list<T, F>(&mut self, f: F) -> Result<Option<Vec<T>>, ParserError>
+        where F: FnMut(&mut Parser<'a>) -> Result<T, ParserError>,
+        {
+            if !self.consume_token(&Token::LParen) {
+                Ok(None)
+            } else {
+                let args = self.parse_comma_separated(f)?;               
+                self.expect_token(&Token::RParen)?;
+                Ok(Some(args))
+            }
+        }
+    
+    /// Returns true if we have whitespace at the current index
+    pub fn peek_is_whitespace(&self) -> bool {
+        self.tokens
+            .get(self.index)
+            .map_or(true, |token| matches!(token.token, Token::Whitespace(_)))
+    }  
+
+    /// Ensures the current token is not whitespace; returns Ok(()) on success or an error if whitespace is found
+    pub fn expect_nonwhitespace_token(&mut self) -> Result<(), ParserError> {
+        if self.peek_is_whitespace() {
+            self.expected_ref("Non-whitespace", self.peek_token_ref())?
+        } else {
+            Ok(())
+        }
+    }    
+
+    /// Parse stage
+    ///
+    /// For now it only supports Snowflake.
+    fn parse_staged_table(&mut self) -> Result<Option<TableFactor>, ParserError> {
+        if self.consume_token(&Token::AtSign) {
+            let name = self.parse_stage_name()?; //parse_stage_namespace()?;
+            let path = self.parse_stage_path()?;
+            let parameters = self.parse_parenthesized_comma_separated_list(Parser::parse_simple_named_args)?;
+
+            let placeholder = match parameters {
+                None => None,
+                Some(_) => {
+                    self.prev_token();
+                    let t = self.expect_token(&Token::RParen)?;
+                    Some(t)
+                }
+            };
+            
+            let alias = self.parse_optional_table_alias(keywords::RESERVED_FOR_TABLE_ALIAS)?;
+
+            return Ok(Some(TableFactor::Staged { 
+                name,
+                path,
+                alias,
+                parameters,
+                placeholder
+            }));
+        }
+        Ok(None)
+    }
+
+    fn parse_stage_name(&mut self) -> Result<ObjectName, ParserError> {
+        let mut list = vec![];
+        // At this point the "@" has been consumed. It should not be followed by any whitespace
+        self.expect_nonwhitespace_token()?;
+
+        if self.consume_token(&Token::Tilde) {
+            list.push(Ident::new("~"));
+        }
+        else {
+            loop {
+                // NB. Mod character is a '%' symbol.
+                // In Snowflake it indicates that the stage is attached to a
+                // table named in the following identifier
+                if self.consume_token(&Token::Mod) {
+                    // Ensure that tokens are not separated with any whitespace
+                    self.expect_nonwhitespace_token()?;
+                    let ident = self.parse_identifier(false)?;
+                    list.push(Ident {
+                        value: format!("%{}", ident.value),
+                        quote_style: ident.quote_style,
+                        span: ident.span
+                    });
+                    break;
+                }
+
+                // Parse normal identifiers
+                list.push(self.parse_identifier(false)?);
+
+                // Stop if no '.' separator is found
+                if !self.consume_token(&Token::Period) {
+                    break;
+                }
+            }
+        }
+        Ok(ObjectName(list))
+    }
+
+    fn parse_stage_path(&mut self) -> Result<Option<StagePath>, ParserError> {
+        // Ensure the path starts with a '/' token
+        if self.peek_is_whitespace() || !self.consume_token(&Token::Div) {
+            return Ok(None);
+        }
+    
+        let mut path = Vec::new();
+    
+        // Stop parsing if whitespace is encountered before parsing the next identifier
+        while !self.peek_is_whitespace() {
+            // Parse the next identifier
+            let identifier = self.parse_identifier(false)?;            
+            path.push(identifier);
+            // Stop parsing if whitespace is encountered or no '/'
+            if self.peek_is_whitespace() || !self.consume_token(&Token::Div) {
+                break;
+            }
+        }
+    
+        Ok(Some(StagePath(path)))
+    }
+
+    fn parse_simple_named_args(&mut self) -> Result<FunctionArg, ParserError> {
+        let name = self.parse_identifier(false)?;
+        let operator = self.parse_function_named_arg_operator()?;
+        let arg = self.parse_wildcard_expr()?.into();
+
+        Ok(FunctionArg::Named {
+            name,
+            arg,
+            operator,
+        })
     }
 
     fn maybe_parse_table_sample(&mut self) -> Result<Option<Box<TableSample>>, ParserError> {
